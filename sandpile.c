@@ -76,47 +76,49 @@ static void stabilize() {
   const int n = N;
   const int c = n / 2;
   const int r2 = c * c;
+  const int w = n + 2;                     // padded width: 1-cell border all around
+  const size_t sz = (size_t)w * w;
 
-  int *lo = malloc(n * sizeof(int));
-  int *hi = malloc(n * sizeof(int));
+  int *restrict a = calloc(sz, sizeof(int));    // current grid
+  int *restrict b = calloc(sz, sizeof(int));    // next grid
+  int *restrict m = calloc(sz, sizeof(int));    // 1 = inside Pacman, 0 = outside or border
+
   for (int i = 0; i < n; ++i) {
     int jmax = MAX(i, n - 1 - i);
-    lo[i] = 0;
-    hi[i] = -1;
-    int found = 0;
-    for (int j = 0; j <= jmax; ++j) {
-      if ((i - c) * (i - c) + (j - c) * (j - c) <= r2) {
-        if (!found) { lo[i] = j; found = 1; }
-        hi[i] = j;
-      }
+    for (int j = 0; j < n; ++j) {
+      size_t k = (size_t)(i + 1) * w + (j + 1);
+      a[k] = grid[i][j];
+      m[k] = (j <= jmax) &&
+             ((i - c) * (i - c) + (j - c) * (j - c) <= r2);
     }
   }
 
   int changed;
   do {
     changed = 0;
-    for (int i = 0; i < n; ++i) {
-      for (int j = lo[i]; j <= hi[i]; ++j) {
-        int g = grid[i][j];
-        if (g < 4)
-          continue;
-        changed = 1;
-        int q = g >> 2;        // number of topples = g / 4
-        grid[i][j] = g & 3;    // what's left       = g % 4
-        if (i > 0)
-          grid[i - 1][j] += q;
-        if (j > 0)
-          grid[i][j - 1] += q;
-        if (i < n - 1)
-          grid[i + 1][j] += q;
-        if (j < n - 1)
-          grid[i][j + 1] += q;
+    for (int i = 1; i <= n; ++i) {
+      for (int j = 1; j <= n; ++j) {
+        size_t k = (size_t)i * w + j;
+        int q  = (a[k]     >> 2) & -m[k];
+        int qu = (a[k - w] >> 2) & -m[k - w];
+        int qd = (a[k + w] >> 2) & -m[k + w];
+        int ql = (a[k - 1] >> 2) & -m[k - 1];
+        int qr = (a[k + 1] >> 2) & -m[k + 1];
+        b[k] = a[k] - 4 * q + qu + qd + ql + qr;
+        changed |= q;
       }
     }
+    int *t = a; a = b; b = t;   // swap buffers
   } while (changed);
 
-  free(lo);
-  free(hi);
+  // Copy result back.
+  for (int i = 0; i < n; ++i)
+    for (int j = 0; j < n; ++j)
+      grid[i][j] = a[(size_t)(i + 1) * w + (j + 1)];
+
+  free(a);
+  free(b);
+  free(m);
 }
 
 void find_identity() {

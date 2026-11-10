@@ -1,0 +1,64 @@
+STAGE 03 - BRANCHLESS DOUBLE-BUFFERED SWEEP (SLOWER ON ONE CORE)
+
+Git tag: opt3-double-buffer
+Type: data structure + algorithm (enabling step for parallelism)
+
+MOTIVATION (profile of opt 2)
+perf annotate of stabilize after opt 2:
+- ~35%: in-place dependency chain. Each topple adds to the right neighbor
+  (addl ..., 0x4(%rcx)), and the very next iteration loads that same cell. The CPU
+  cannot overlap iterations and the loop cannot vectorize.
+- ~25%: unpredictable branches (the "cell >= 4?" test and bounds checks).
+- ~13%: row-pointer loads from the int** grid for the rows above and below.
+perf stat at N=401:
+- IPC 1.54 (34.1B instructions / 22.1B cycles): the core is stalling.
+- 3.9M cache misses: negligible. Memory is not the bottleneck.
+- 300M branch misses: ~15-20 cycles each = ~20-27% of all cycles.
+Conclusion: the sweep is limited by branch mispredictions and the in-place chain,
+not by cache.
+
+WHAT CHANGED (stabilize only)
+- Copy grid into a flat, padded (n+2)x(n+2) buffer with a 1-cell zero border, plus a
+  0/1 mask (1 = inside Pacman, computed with the original test).
+- Each sweep reads buffer a and writes buffer b (Jacobi style), then swaps:
+      q(cell) = (a[cell] >> 2) & -mask[cell]          (0 for outside/border cells)
+      b[k] = a[k] - 4*q(k) + q(up) + q(down) + q(left) + q(right)
+- No branches in the inner loop (mask trick: x & -1 = x, x & 0 = 0); the padding
+  border removes the grid-edge checks. restrict on the buffers lets gcc vectorize.
+- Copy the result back into grid at the end.
+
+WHY IT IS VALID
+Toppling every unstable cell simultaneously is a legal toppling order, so by the
+abelian property (and the least action principle, for the sink cells outside the
+Pacman) the final configuration is identical.
+
+ASSUMPTIONS / SCOPE
+- Inside cells hold non-negative counts (true: 0..3 after first stabilize, so
+  6 - g is 3..6). Outside cells may be negative in the second stabilize but are
+  masked out and never topple.
+- Uses ~3 extra n^2 int buffers (~12 MB at N=1001).
+
+RESULTS (N=1001)
+Opt 2: ~296 s
+Opt 3: 356.2 s (5m56.192s)
+Speedup vs opt 2: 0.83x (slower)
+Speedup vs baseline: 2.0x
+
+CORRECTNESS
+cmp identity.png identity-ref.png -> identical
+
+WHY IT IS SLOWER ON ONE CORE
+- In-place (Gauss-Seidel) sweeping spreads sand within a single sweep in the scan
+  direction: a grain toppled into the next cell can topple again in the same pass.
+  Simultaneous (Jacobi) toppling only moves sand one cell per sweep in every
+  direction, so it needs more sweeps.
+- It also touches every cell of the n x n grid (inside or not) and reads 2 extra
+  arrays per sweep.
+- The cheaper, branchless, vectorizable sweep did not fully make up for the extra
+  sweeps on a single core.
+
+WHY IT IS KEPT
+This is a prerequisite optimization. The in-place sweep cannot be parallelized
+safely (neighboring cells write to each other). In the double-buffered sweep each
+cell writes only its own entry in b, so the loop is race-free and parallelizes with
+a single OpenMP pragma (opt 4).
