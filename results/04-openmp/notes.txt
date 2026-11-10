@@ -1,0 +1,49 @@
+STAGE 04 - OPENMP PARALLEL SWEEP
+
+Git tag: opt4-openmp
+Type: parallelism
+
+WHAT CHANGED
+- stabilize: added  #pragma omp parallel for reduction(|:changed)  above the row loop
+  of the double-buffered sweep (opt 3).
+- Makefile: added -fopenmp to FLAGS (without it gcc ignores the pragma).
+
+WHY IT IS VALID (RACE-FREE)
+- In the double-buffered sweep each cell (i, j) reads only buffer a and writes only
+  its own entry b[k]. No two iterations write the same location, so rows can be
+  split across threads with no locks.
+- reduction(|:changed) gives each thread a private copy of changed and ORs them
+  together at the end of the loop, so there is no race on that flag.
+- The in-place sweep (opt 1/2) could not be parallelized this way: a topple writes
+  into neighboring cells that another thread may be reading or writing.
+
+ASSUMPTIONS / SCOPE
+- Benefit scales with available cores; the course VM has 4.
+- Thread count follows OpenMP defaults (OMP_NUM_THREADS to override).
+
+RESULTS (N=1001)
+Opt 3 (serial):  356.2 s (5m56.192s)
+Opt 4:           103.2 s (1m43.150s real), user 6m45.841s (405.8 s), sys 0.744 s
+Speedup vs opt 3: 3.45x  (parallel efficiency 3.45 / 4 = 86%)
+Speedup vs opt 2 (best serial, ~296 s): 2.87x
+Speedup vs baseline (712.5 s): 6.9x
+
+CORRECTNESS
+cmp identity.png identity-ref.png -> identical
+
+READING real VS user
+- real = wall-clock time; user = CPU time summed over all cores.
+- user / real = 405.8 / 103.2 = 3.9, so ~4 cores were busy on average.
+  In every earlier stage user ~= real (single core).
+
+WHY NOT A FULL 4x
+- Total CPU time rose from 356 s (opt 3) to 406 s, ~50 s of overhead:
+  - every sweep ends with an implicit barrier (all threads wait for the slowest)
+    before the buffer swap, and there are a very large number of sweeps;
+  - the 4 cores share memory bandwidth while streaming ~12 MB of buffers per sweep.
+
+INTROSPECTION
+Opt 3 alone was a 0.83x slowdown, but it was the prerequisite that made this
+parallelization legal. Combined, opt 3 + opt 4 are 2.87x faster than the best serial
+version (opt 2): a slower serial algorithm that parallelizes beats a faster one that
+does not.

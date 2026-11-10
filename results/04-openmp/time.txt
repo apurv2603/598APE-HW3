@@ -1,0 +1,1 @@
+N=1001 opt4: real 1m43.150s, user 6m45.841s, sys 0m0.744s

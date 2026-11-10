@@ -1,0 +1,51 @@
+STAGE 05 - -march=native (WIDER VECTORS)
+
+Git tag: opt5-march-native
+Type: compiler / vectorization
+
+MOTIVATION (profile of opt 4, N=1001)
+- 73.8% in stabilize._omp_fn.0 (the parallel sweep body), ~23% in libgomp
+  (threads spin-waiting at the per-sweep barrier).
+- perf stat: IPC = 3.05T instructions / 1.09T cycles = 2.8 (high).
+  1.08B cache misses vs 3T instructions (~1 per 3,000): not memory-bound.
+  313M branch misses at N=1001 (vs 300M at N=401 before opt 3): branchless
+  rewrite worked.
+- Conclusion: the sweep is compute-bound, so doing more cells per instruction
+  (wider SIMD) should help. (Caveat: libgomp spin loops also run at high IPC and
+  inflate the overall number somewhat.)
+- By default gcc targets baseline x86-64 (SSE2, 128-bit = 4 ints per instruction).
+
+WHAT CHANGED
+Makefile only: FLAGS := -O3 -march=native -lm -g -Werror -fopenmp
+The VM CPU supports AVX2 (256-bit, 8 ints) and AVX-512F (512-bit, 16 ints).
+
+WHY IT IS VALID
+Integer arithmetic is exact, so wider vector instructions cannot change results
+(unlike floating point, where FMA changes rounding).
+
+ASSUMPTIONS / SCOPE
+- -march=native targets the CPU of the machine doing the build. A reviewer who
+  rebuilds gets code for their own CPU, so this does not require non-standard
+  hardware; no hand-written intrinsics are used. A binary built here may not run on
+  an older CPU without AVX2/AVX-512.
+- Speedup depends on the reviewer's vector width.
+
+RESULTS (N=1001)
+Opt 4:  103.2 s (1m43.150s)
+Opt 5:   61.0 s (1m1.041s real), user 3m59.952s (240.0 s), sys 0.643 s
+Speedup vs opt 4: 1.69x
+Speedup vs baseline (712.5 s): 11.7x
+user / real = 3.93 (still ~4 cores busy)
+
+CORRECTNESS
+cmp identity.png identity-ref.png -> identical
+
+INTROSPECTION
+- This is the payoff of the opt 3 rewrite: the in-place sweep had a dependency chain
+  and data-dependent branches, so wider vectors would not have helped it. The
+  branchless, double-buffered loop can use them.
+- 1.69x rather than the ideal 2x (SSE2 4-wide -> AVX2 8-wide): the ~23% of time spent
+  in barrier synchronization is not vectorized, and part of the sweep is loads/stores.
+- Remaining overhead: per-sweep barrier in libgomp. A persistent parallel region
+  around the whole do/while (omp for inside) would reduce fork/join cost per sweep;
+  the barrier itself is required for correctness.
