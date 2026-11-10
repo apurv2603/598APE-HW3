@@ -1,0 +1,48 @@
+STAGE 00 - BASELINE
+
+Code: unmodified starter code (git tag: baseline)
+Build: gcc ./sandpile.c -o ./sandpile.exe -O3 -lm -g -Werror
+Environment: course VM (fa26-cs598a-032), Docker image cs598 (Ubuntu 24.04), kernel 7.0.0-38
+Benchmark: ./sandpile.exe 1001  (1001x1001 Pacman grid identity sandpile)
+
+TIMING
+real 11m52.514s (~712.5 s)
+user 11m52.418s
+sys  0m0.026s
+For comparison, the README reports ~3m40s on the instructor's laptop, so the VM is ~3.2x slower per core.
+
+OBSERVATIONS FROM TIMING
+- user ~= real: the program is single-threaded; one core does all the work.
+- sys ~= 0: essentially no time in the kernel or I/O. Writing the PNG is negligible.
+
+PROFILE (perf record -g, N=1001)
+- stabilize(): 98.17% of all cycles. Nothing else matters.
+- The call-graph entries under stabilize (0x300000003, 0x700000007, ...) are not real
+  functions. -O3 omits frame pointers, so perf's -g stack walk read grid data as return
+  addresses. 0x300000003 is two adjacent ints with values 3 and 3.
+
+HOT INSTRUCTIONS IN stabilize (perf annotate)
+- ~25%: imull/shr/sar sequence = the circle test (i-N/2)^2 + (j-N/2)^2 <= (N/2)^2,
+  evaluated for every cell on every pass, though the shape never changes.
+- ~14%: movl <N> = the global N reloaded from memory inside the loop. The compiler cannot
+  prove that the int writes to grid do not alias the global int N, so it re-reads it.
+- ~20%: the actual toppling work (cmpl $3, subl $4, addl $1 to each neighbor).
+- movq loads of row pointers suggest grid is accessed as int** (two loads per access).
+
+HOW stabilize WORKS
+- Repeated full sweeps over the Pacman until a sweep topples nothing.
+- Pacman shape = circle test AND j <= MAX(i, N-1-i) (the mouth).
+- Each topple moves exactly 4 grains, even if the cell holds many more, so a cell with
+  4k grains needs k sweeps to drain.
+- Cells outside the Pacman receive grains but are never toppled; they act as the sink.
+
+CORRECTNESS REFERENCE
+identity-ref.png (shipped with the repo) is the correct 1001x1001 output. Every stage
+is checked with: cmp identity.png identity-ref.png
+
+PLANNED OPTIMIZATIONS (in order)
+1. Hoist shape test out of the loop (precomputed per-row bounds) + local copy of N.
+2. Topple all grains at once (q = g/4) to cut the number of sweeps.
+3. Flat contiguous grid instead of int**.
+4. Old/new double-buffered sweep so each cell is independent -> OpenMP + vectorization.
+5. (Probably not done) worklist of active cells.

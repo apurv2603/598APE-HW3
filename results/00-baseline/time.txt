@@ -1,0 +1,1 @@
+N=1001 baseline: real 11m52.514s, user 11m52.418s, sys 0m0.026s
