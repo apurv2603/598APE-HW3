@@ -1,0 +1,46 @@
+STAGE 02 - TOPPLE ALL GRAINS AT ONCE (NO GAIN)
+
+Git tag: opt2-bulk-topple
+Type: work reduction (fewer sweeps), attempted
+
+WHAT CHANGED (stabilize only, on top of opt 1)
+Instead of removing exactly 4 grains per visit, a cell with g >= 4 grains is toppled
+q = g / 4 times in one step:
+    q = g >> 2;  grid[i][j] = g & 3;  each in-bounds neighbor += q;
+(>> 2 and & 3 equal / 4 and % 4 because grain counts are never negative.)
+
+WHY IT IS VALID
+Abelian property: the final stable configuration does not depend on the order or
+grouping of topples. Toppling a cell q times in one step is equivalent to toppling it
+once per sweep q times.
+
+HYPOTHESIS
+Baseline toppled only 4 grains per visit, so a cell with 4k grains needed k sweeps to
+drain. Batching should cut the number of sweeps.
+
+RESULTS (N=1001)
+Opt 1:  294.2 s (4m54.226s)
+Opt 2:  298.1 s (4m58.094s), rerun 296.3 s (4m56.262s)
+Speedup vs opt 1: ~0.99x (within noise, no gain)
+Speedup vs baseline: ~2.4x (all from opt 1)
+
+CORRECTNESS
+cmp identity.png identity-ref.png -> (fill in result)
+
+WHY IT DID NOT HELP
+- The hypothesis assumed tall piles. In practice, when the sweep reaches a cell it almost
+  always holds 4-7 grains, so q is nearly always 1 and the batched path does the same
+  work as before.
+- So the cost is not draining tall piles; it is sand spreading across the grid roughly
+  one cell per sweep, which requires a very large number of full sweeps over a grid that
+  is mostly already stable.
+- Conclusion: the remaining cost is (number of sweeps) x (cost of a full sweep), and the
+  number of sweeps is set by how far sand has to travel, not by pile height.
+  (To confirm: instrument sweep count and histogram of q at N=401.)
+
+KEPT ANYWAY
+Correct, costs nothing, and helps for inputs with tall piles (large initial grain counts).
+
+NEXT
+Reduce the number of full sweeps: only revisit cells near recent topples (active region /
+worklist), or change how the identity is computed / its starting configuration.

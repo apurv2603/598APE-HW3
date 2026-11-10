@@ -1,0 +1,2 @@
+N=1001 opt2 run 1: real 4m58.094s
+N=1001 opt2 run 2: real 4m56.262s

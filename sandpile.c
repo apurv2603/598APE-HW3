@@ -73,18 +73,16 @@ static void render(char *filename) {
 }
 
 static void stabilize() {
-  const int n = N;        // local copy so the compiler keeps it in a register
+  const int n = N;
   const int c = n / 2;
   const int r2 = c * c;
 
-  // For each row, the cells inside the Pacman form one contiguous run [lo, hi].
-  // Compute it once using the exact same test as the original loop.
   int *lo = malloc(n * sizeof(int));
   int *hi = malloc(n * sizeof(int));
   for (int i = 0; i < n; ++i) {
     int jmax = MAX(i, n - 1 - i);
     lo[i] = 0;
-    hi[i] = -1;               // empty row by default
+    hi[i] = -1;
     int found = 0;
     for (int j = 0; j <= jmax; ++j) {
       if ((i - c) * (i - c) + (j - c) * (j - c) <= r2) {
@@ -99,18 +97,20 @@ static void stabilize() {
     changed = 0;
     for (int i = 0; i < n; ++i) {
       for (int j = lo[i]; j <= hi[i]; ++j) {
-        if (grid[i][j] < 4)
+        int g = grid[i][j];
+        if (g < 4)
           continue;
-        changed = 1; // topple it
-        grid[i][j] -= 4;
+        changed = 1;
+        int q = g >> 2;        // number of topples = g / 4
+        grid[i][j] = g & 3;    // what's left       = g % 4
         if (i > 0)
-          grid[i - 1][j]++;
+          grid[i - 1][j] += q;
         if (j > 0)
-          grid[i][j - 1]++;
+          grid[i][j - 1] += q;
         if (i < n - 1)
-          grid[i + 1][j]++;
+          grid[i + 1][j] += q;
         if (j < n - 1)
-          grid[i][j + 1]++;
+          grid[i][j + 1] += q;
       }
     }
   } while (changed);
