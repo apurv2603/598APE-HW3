@@ -73,29 +73,50 @@ static void render(char *filename) {
 }
 
 static void stabilize() {
-  int changed = 0;
+  const int n = N;        // local copy so the compiler keeps it in a register
+  const int c = n / 2;
+  const int r2 = c * c;
+
+  // For each row, the cells inside the Pacman form one contiguous run [lo, hi].
+  // Compute it once using the exact same test as the original loop.
+  int *lo = malloc(n * sizeof(int));
+  int *hi = malloc(n * sizeof(int));
+  for (int i = 0; i < n; ++i) {
+    int jmax = MAX(i, n - 1 - i);
+    lo[i] = 0;
+    hi[i] = -1;               // empty row by default
+    int found = 0;
+    for (int j = 0; j <= jmax; ++j) {
+      if ((i - c) * (i - c) + (j - c) * (j - c) <= r2) {
+        if (!found) { lo[i] = j; found = 1; }
+        hi[i] = j;
+      }
+    }
+  }
+
+  int changed;
   do {
     changed = 0;
-    for (int i = 0; i < N; ++i) {
-      for (int j = 0; j <= MAX(i, N - 1 - i); ++j) {
-        if ((i - N / 2) * (i - N / 2) + (j - N / 2) * (j - N / 2) <=
-            (N / 2) * (N / 2)) {
-          if (grid[i][j] < 4)
-            continue;
-          changed = 1; // topple it
-          grid[i][j] -= 4;
-          if (i > 0)
-            grid[i - 1][j]++;
-          if (j > 0)
-            grid[i][j - 1]++;
-          if (i < N - 1)
-            grid[i + 1][j]++;
-          if (j < N - 1)
-            grid[i][j + 1]++;
-        }
+    for (int i = 0; i < n; ++i) {
+      for (int j = lo[i]; j <= hi[i]; ++j) {
+        if (grid[i][j] < 4)
+          continue;
+        changed = 1; // topple it
+        grid[i][j] -= 4;
+        if (i > 0)
+          grid[i - 1][j]++;
+        if (j > 0)
+          grid[i][j - 1]++;
+        if (i < n - 1)
+          grid[i + 1][j]++;
+        if (j < n - 1)
+          grid[i][j + 1]++;
       }
     }
   } while (changed);
+
+  free(lo);
+  free(hi);
 }
 
 void find_identity() {

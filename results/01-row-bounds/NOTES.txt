@@ -1,0 +1,43 @@
+STAGE 01 - PRECOMPUTED ROW BOUNDS + LOCAL N
+
+Git tag: opt1-row-bounds
+Type: work reduction / loop-invariant code motion
+
+WHAT CHANGED (stabilize only)
+1. Before the sweep loop, compute for each row i the contiguous range [lo[i], hi[i]] of
+   columns inside the Pacman, using the exact same test as the original code
+   (circle test AND j <= MAX(i, N-1-i)). Rows with no inside cells get hi < lo.
+   The inner loop becomes: for (j = lo[i]; j <= hi[i]; ++j), with no shape test.
+2. Copy the global N into a local const int n at the top of the function, so the
+   compiler can keep it in a register instead of reloading it each iteration.
+
+WHY IT IS VALID
+- The inside cells of each row form one contiguous run: the circle condition is
+  (j - c)^2 <= r^2 - (i - c)^2, which is an interval in j, and the mouth only caps
+  the right end (j <= MAX(i, N-1-i)). Intersection of two intervals is an interval.
+- The same cells are visited in the same order with the same toppling rule, so the
+  sequence of topples and the number of sweeps are unchanged. Output is bit-identical.
+- Precomputing the bounds is O(N^2) once per call, negligible next to the sweeps.
+
+ASSUMPTIONS / SCOPE
+- Relies on the Pacman shape being "circle intersect mouth wedge". A shape whose
+  rows are not contiguous (e.g. one with holes) would need a mask instead of bounds.
+- Works for any N.
+
+RESULTS (N=1001)
+Baseline: 712.5 s (11m52.514s)
+Opt 1:    294.2 s (4m54.226s)
+Speedup:  2.42x
+sys still ~0, still single-threaded (user ~= real).
+
+CORRECTNESS
+cmp identity.png identity-ref.png -> identical
+
+INTROSPECTION
+- The profile attributed ~25% to the shape test and ~14% to N reloads, which would
+  predict roughly 1.5-1.7x. The actual 2.42x is larger: with the test gone the inner
+  loop is much simpler, so the compiler generates tighter code for the remaining
+  toppling work, and the branch on the shape test (which mispredicts near the circle
+  edge) disappears.
+- The number of sweeps is unchanged; this stage only made each sweep cheaper. The next
+  stage (topple all grains at once) targets the number of sweeps instead.
